@@ -1,0 +1,271 @@
+/* CTE for T1 PEMS extract */
+
+
+--Go
+-- DECLARE @aoid int
+-- SET @aoid = 03417;
+with
+    Authorised_Officer
+    as
+    (
+        --CTE to get Authorised officer details
+        select
+            ao.AUTHORISED_OFFICER_OID                                   [Authorised officer ID]
+            , ao.AO_NUMBER                                              [Authorised officer number]
+            , usr.PEMS_USER_OID                                         [PEMS user ID]
+            , usr.MOBILE_NUMBER                                         [Mobile number]
+            , usr.IS_DAFF_USER                                          [Is internal AO]
+            , s.LONG_DESCRIPTION                                        [Registration Status]
+            , usr.FIRST_NAME +' '+ usr.FAMILY_NAME                      [Full name]
+            , usr.EMAIL                                                 [Email]
+            , isnull(aa.LINE1,daa.LINE1)                                [Line 1]
+            , isnull(aa.LINE2,daa.LINE2)                                [Line 2]
+            , isnull(aa.SUBURB,daa.SUBURB)                              [Suburb]
+            , isnull(aa.STATE_CODE,daa.STATE_CODE)                      [State]
+            , isnull(aa.POSTCODE,daa.POSTCODE)                          [Postcode]
+            , ao.START_DATE                                             [Start date]
+            , ao.END_DATE                                               [End date]
+            , e.IS_ESTB_EMPLOYEE                                        [Is Establishment AO]
+            , e.IS_TP_AO                                                [Is Third-party AO]
+            , e.ESTB_NUMBER                                             [Establishment number]
+            , e.COMPANY_NAME                                            [Establishment name]
+            , ea.line1                                                  [Estb Line 1]
+            , ea.LINE2                                                  [Estb Line 2]
+            , ea.SUBURB                                                 [Estb Suburb]
+            , ea.STATE_CODE                                             [Estb State]
+            , ea.POSTCODE                                               [Estb Postcode]
+            , usr.AO_ONBOARDED                                          [Is AO Onboarded]
+
+        
+		from T1_PEMS.DA_PEMS.AUTHORISED_OFFICER ao
+            join T1_PEMS.DA_PEMS.PEMS_USER              usr     on usr.PEMS_USER_OID = ao.PEMS_USER_OID
+            join T1_PEMS.DA_PEMS.REF_AO_STATUS          s       on ao.AO_STATUS_REFOID = s.AO_STATUS_REFOID
+            left join T1_PEMS.DA_PEMS.AO_EMPLOYMENT     e       on e.PEMS_USER_OID = usr.PEMS_USER_OID
+            left join T1_PEMS.DA_PEMS.AUST_ADDRESS      aa      on aa.ADDRESS_OID = usr.POSTAL_ADDRESS_OID
+            left join T1_PEMS.DA_PEMS.DAFF_OFFICE       do      on do.DAFF_OFFICE_OID = usr.DAFF_OFFICE_OID
+            left join T1_PEMS.DA_PEMS.AUST_ADDRESS      daa     on daa.ADDRESS_OID = do.ADDRESS_OID
+            left join T1_PEMS.DA_PEMS.NAMED_LOCATION    nl      on nl.NAMED_LOCATION_OID = e.NAMED_LOCATION_OID
+            left join T1_PEMS.DA_PEMS.AUST_ADDRESS      ea      on ea.ADDRESS_OID = nl.ADDRESS_OID
+        where 1=1
+        -- and ao.AO_NUMBER = @aoid
+    ),
+    Authorised_officer_Competency
+    AS
+    (
+        -- CTE to get Authorised officer job functions
+        select
+            ao.AUTHORISED_OFFICER_OID                                   [Authorised officer ID]
+            , s.LONG_DESCRIPTION                                        [Competency Status]
+            , jf.SHORT_DESCRIPTION                                      [Job function code]
+            , jf.LONG_DESCRIPTION                                       [Job function name]
+           -- , c.COMPETENCY_START_DATE                                   [Competency start date]
+           -- , c.COMPETENCY_END_DATE                                     [Competency end date]
+            , c.FIRST_AID_CERT_EXPIRY_DATE                              [First aid cert expiry]
+            , c.HEIGHT_AWARENESS_EXPIRY_DATE                            [Height awarness expiry]
+        from T1_PEMS.DA_PEMS.AO_COMPETENCY c
+            join T1_PEMS.DA_PEMS.AUTHORISED_OFFICER     ao  on ao.AUTHORISED_OFFICER_OID = c.AUTHORISED_OFFICER_OID
+            join T1_PEMS.DA_PEMS.REF_AO_STATUS          s   on ao.AO_STATUS_REFOID = s.AO_STATUS_REFOID
+            join T1_PEMS.DA_PEMS.REF_JOB_FUNCTION       jf  on c.JOB_FUNCTION_REFOID = jf.JOB_FUNCTION_REFOID
+        -- where 1=1 --and ao.AO_NUMBER = @aoid
+    ),
+    Authorised_Officer_recent_inspection
+    AS
+    (
+        -- CTE to get authorised officer recent inspections
+        select distinct
+        i.INSPECTION_OID                                            [Inspection ID]
+        , t.INSPECTION_TYPE_REFOID                                  [Inspection type ID]
+        , t.LONG_DESCRIPTION                                        [Inspection type]
+        , s.LONG_DESCRIPTION                                        [Inspection status]
+        , i.INSPECTION_DATE                                         [Inspection Date]
+        , ao.[Authorised officer ID]                                [Authorised officer ID]
+        , ao.[Authorised officer number]                            [Authorised officer number]
+        , ti.PEMS_USER_OID                                          [PEMS user ID]
+        , ISNULL(rfp.RFP_EXTRACT_OID,re.RFP_EXTRACT_OID)            [RFP Extract ID]
+        , ISNULL(rfp.RFPNBR,re.RFPNBR)                              [RFP number]
+        from T1_PEMS.DA_PEMS.INSPECTION i
+            join T1_PEMS.DA_PEMS.REF_INSPECTION_TYPE        t   on t.INSPECTION_TYPE_REFOID = i.INSPECTION_TYPE_REFOID
+            join T1_PEMS.DA_PEMS.REF_INSPECTION_STATUS      s   on s.INSPECTION_STATUS_REFOID = i.INSPECTION_STATUS_REFOID
+            join T1_PEMS.DA_PEMS.[TIME]                     ti  on ti.INSPECTION_OID = i.INSPECTION_OID
+            join T1_PEMS.DA_PEMS.PEMS_USER                  usr on usr.PEMS_USER_OID = ti.PEMS_USER_OID
+            join Authorised_Officer                         ao  on ao.[PEMS user ID] = usr.PEMS_USER_OID
+            left join T1_PEMS.DA_PEMS.COMMODITY_INSPECTION  ci  on ci.INSPECTION_OID = i.INSPECTION_OID
+            left join T1_PEMS.DA_PEMS.BULK_IN_SHIP_HOLD_INSP bi on bi.INSPECTION_OID = i.INSPECTION_OID
+            left join T1_PEMS.DA_PEMS.RFP_EXTRACT           re  on re.RFP_EXTRACT_OID = ci.RFP_EXTRACT_OID
+            left join T1_PEMS.DA_PEMS.RFP_EXTRACT           rfp on rfp.RFP_EXTRACT_OID = bi.RFP_EXTRACT_OID
+        where DATEDIFF(mm,i.INSPECTION_DATE,GETDATE()) < = 12
+        --and ao.[Authorised officer number] = @aoid
+    ),
+    Authorsied_officer_distinct_inspection
+     -- CTE is to get distinct inspection type and their inspection details for an authorised officer
+    AS
+    (
+        select distinct
+            ri.[Inspection ID]                      [Inspection ID]
+        , ri.[Inspection type ID]                   [Inspection type ID]
+        , ri.[Inspection type]                      [Inspection type]
+        , ri.[Inspection status]                    [Inspection status]
+        , ri.[Inspection Date]                      [Inspection Date]
+        , ri. [Authorised officer ID]               [Authorised officer ID]
+        , ri.[Authorised officer number]            [Authorised officer number]
+        , ri.[PEMS user ID]                         [PEMS user ID]
+        , ri.[RFP Extract ID]                       [RFP Extract ID]
+        , ri.[RFP number]                           [RFP number]
+        from Authorised_Officer_recent_inspection ri
+            inner join (select [Inspection type ID], [Authorised officer ID]
+                    , max([Inspection ID]) as [Inspection ID]
+            from Authorised_Officer_recent_inspection
+            group by [Inspection type ID] ,[Authorised officer ID] ) as rt
+            on rt.[Inspection ID] = ri.[Inspection ID]
+            and rt.[Inspection type ID] = ri.[Inspection type ID]
+            and rt.[Authorised officer ID] = ri.[Authorised officer ID]
+    ),
+    Protocol -- CTE is a reference table on Job functions required for protocol markets
+    AS
+    (
+        select
+            distinct concat(jcm.COMMODITY_REFOID,jco.COUNTRY_REFOID,p.PACKAGING_CATEGORY_REFOID)     [Unique Reference Key]
+            , cm.LONG_DESCRIPTION                                                                    [Commodity Name]
+            , cm.SHORT_DESCRIPTION                                                                   [Commodity Code]
+            , cm.SCIENTIFIC_NAME                                                                     [Scientific Name]
+           , co.LONG_DESCRIPTION                                                                     [Destination Country]
+            , jf.SHORT_DESCRIPTION                                                                   [Job function code]
+            , jfr.JFR_NAME                                                                           [Job function name]
+            , jfr.IS_PROTOCOL                                                                        [Is Protocol]
+        from t1_pems.da_pems.JOB_FUNCTION_REQUIREMENT jfr
+            left join t1_pems.da_pems.jfr_commodity_criteria                jcm  on jfr.job_function_requirement_oid = jcm.job_function_requirement_oid
+            left join t1_pems.da_pems.ref_commodity                         cm   on jcm.commodity_refoid = cm.commodity_refoid
+            left join t1_pems.da_pems.jfr_country_criteria                  jco  on jfr.job_function_requirement_oid = jco.job_function_requirement_oid
+            left join t1_pems.da_pems.ref_country                           co   on jco.country_refoid = co.country_refoid
+            left join t1_pems.DA_PEMS.JFR_PACKAGING_CAT_CRITERIA            p    on p.JOB_FUNCTION_REQUIREMENT_OID = jfr.JOB_FUNCTION_REQUIREMENT_OID
+            left join T1_PEMS.DA_PEMS.REF_JOB_FUNCTION                      jf   on jf.JOB_FUNCTION_REFOID = jfr.JOB_FUNCTION_REFOID
+        where jfr.IS_PROTOCOL = 'Y'
+    ),
+    -- CTE Non Protocol - Reference table on Job functions required for non-protocol markets
+    Non_protocol
+    AS
+    (
+        select
+            distinct concat(co.COMMODITY_REFOID,p.PACKAGING_CATEGORY_REFOID)                        [Unique Reference Key]
+                , jf.SHORT_DESCRIPTION                                                              [Job function code]
+                , jfr.JFR_NAME                                                                      [Job function name]
+                , co.COMMODITY_REFOID                                                               [Commodity ID]
+                , co.LONG_DESCRIPTION                                                               [Commodity Name]
+                , jfr.IS_PROTOCOL                                                                   [Is Protocol]
+        from T1_PEMS.DA_PEMS.JOB_FUNCTION_REQUIREMENT jfr
+            left join T1_PEMS.DA_PEMS.JFR_COMMODITY_CRITERIA            jcc   on jcc.JOB_FUNCTION_REQUIREMENT_OID = jfr.JOB_FUNCTION_REQUIREMENT_OID
+            left join T1_PEMS.DA_PEMS.REF_COMMODITY                     co    on co.COMMODITY_REFOID = jcc.COMMODITY_REFOID
+            left join T1_PEMS.DA_PEMS.JFR_PACKAGING_CAT_CRITERIA        p     on p.JOB_FUNCTION_REQUIREMENT_OID = jfr.JOB_FUNCTION_REQUIREMENT_OID
+            left join T1_PEMS.DA_PEMS.REF_JOB_FUNCTION                  jf    on jf.JOB_FUNCTION_REFOID = jfr.JOB_FUNCTION_REFOID
+        where jfr.IS_PROTOCOL = 'N' and jfr.COMMODITY_TYPE_REFOID is not null
+    ),
+    Commodity_Job_functions -- CTE get all the required job functions for the inspection conducted by authorised officer
+    AS
+    (
+        select distinct
+            ri.[Authorised officer ID]                                                                           [Authorised officer ID]
+            , ri.[Authorised officer number]                                                                     [Authorised_Officer number]
+           , re.RFP_EXTRACT_OID                                                                                  [RFP Extract ID]
+            , re.RFPNBR                                                                                          [RFP Number]
+           , cu.LONG_DESCRIPTION                                                                                 [Destination country]
+            , co.LONG_DESCRIPTION                                                                                [Commodity]
+            , ISNULL(p.[Job function code],np.[Job function code])                                               [Required Job function code]
+            , p.[Job function name]                                                                              [Required Protocol Job function name]
+            , np.[Job function name]                                                                             [Required Base Job function name]
+        from T1_PEMS.DA_PEMS.RFP_EXTRACT re
+            join T1_PEMS.DA_PEMS.RFP_LINE                       li on li.RFP_EXTRACT_OID = re.RFP_EXTRACT_OID
+            join Authorsied_officer_distinct_inspection         ri on ri.[RFP number] = re.RFPNBR
+            join T1_PEMS.DA_PEMS.REF_COMMODITY                  co on co.COMMODITY_REFOID = li.COMMODITY_REFOID
+            join T1_PEMS.DA_PEMS.REF_COUNTRY                    cu on cu.COUNTRY_REFOID = re.COUNTRY_REFOID
+            left join Protocol                                  p  on p.[Unique Reference Key] = concat(co.COMMODITY_REFOID,cu.COUNTRY_REFOID,li.PACKAGING_CATEGORY_REFOID)
+                                                                     or p.[Unique Reference Key] = concat(co.COMMODITY_REFOID,cu.COUNTRY_REFOID,'')
+            left join Non_protocol                              np on np.[Unique Reference Key] = concat(co.COMMODITY_REFOID,li.PACKAGING_CATEGORY_REFOID)
+        where DATEDIFF(mm,re.EXTRACT_DTTM,GETDATE()) < = 12
+        -- and ri.[Authorised officer number] = @aoid
+    ),
+    non_commodity_Job_function
+    as
+    (
+         -- Getting job functions required for non-commodity inspection
+        select
+        ri.[Authorised officer ID]                      [Authorised officer ID]
+        , jfr.INSPECTION_TYPE_REFOID                    [Inspection type ID]
+        , jf.SHORT_DESCRIPTION                          [Required job function code]
+        , jfr.JFR_NAME                                  [Required job function name]
+        from T1_PEMS.DA_PEMS.JOB_FUNCTION_REQUIREMENT jfr
+            join Authorsied_officer_distinct_inspection     ri on ri.[Inspection type ID] = jfr.INSPECTION_TYPE_REFOID
+            join T1_PEMS.DA_PEMS.REF_JOB_FUNCTION           jf on jf.JOB_FUNCTION_REFOID = jfr.JOB_FUNCTION_REFOID
+        where INSPECTION_TYPE_REFOID is not NULL
+    ),
+    Authorised_Officer_Recent_Job_Function -- CTE get the all the recently used job functions and assigns relevant RFP's inspected by authorised officers
+    as
+    (
+        select distinct
+            ri.[Authorised officer ID]                                                       [Authorised officer ID]
+            , STRING_AGG(CONVERT(NVARCHAR(max),ri.[RFP number]),',')                         [RFP's Involved ]
+            , ISNULL(cjf.[Required Job function code],njf.[Required Job function code])      [Required Job function code]
+            , cjf.[Required protocol job function name]                                      [Required protocol job function name]
+            , isnull(cjf.[Required base Job function name],njf.[Required job function name]) [Required base job function name]
+        from Authorsied_officer_distinct_inspection ri
+            left join Commodity_Job_functions        cjf on cjf.[RFP Number] = ri.[RFP number]
+            left join non_commodity_Job_function     njf on njf.[Inspection type ID] = ri.[Inspection type ID]
+        --where ri.[Authorised officer number] =  @aoid
+        GROUP by
+        ri.[Authorised officer ID]
+        , ISNULL(cjf.[Required Job function code],njf.[Required Job function code])
+        , cjf.[Required protocol job function name]
+        , isnull(cjf.[Required base Job function name],njf.[Required job function name])
+    ) -- Produce final result
+select distinct
+    ao.[Authorised officer number]
+        , iif (ao.[Is internal AO] = 'Y','Internal', iif(ao.[Is Establishment AO]=1,'External','Third Party')) [Authorised Office type]
+        , ao.[Full name]
+        , ao.[Line 1]
+        , ao.[Line 2]
+        , ao.Suburb
+        , ao.[State]
+        , ao.Postcode
+        , ao.Email
+        , ao.[Mobile number]
+        , ao.[Registration Status]
+        , ao.[Start date]
+        , ao.[End date]
+        , ao.[Establishment number]
+        , ao.[Establishment name]
+        , ao.[Estb Line 1]
+        , ao.[Estb Line 2]
+        , ao.[Estb Suburb]
+        , ao.[Estb State]
+        , ao.[Estb Postcode]
+        , c.[Job function code]
+        , c.[Job function name]
+        -- , c.[Competency start date]
+        -- , c.[Competency end date]
+        , c.[Competency Status]
+         , rjf.[RFP's Involved ]
+       , iif(c.[Job function code] = rjf.[Required Job function code],1,
+             iif(concat(c.[Job function code],' - ',c.[Job function name]) = [Required base job function name],1,0 )) [Recently used]
+		into ##temppemst3
+from Authorised_Officer ao
+    join Authorised_officer_Competency               c   on c.[Authorised officer ID] = ao.[Authorised officer ID]
+    left join Authorised_Officer_Recent_Job_Function rjf on rjf.[Authorised officer ID] = c.[Authorised officer ID]
+                                                            and rjf.[Required Job function code] = c.[Job function code]
+--where ao.[Authorised officer number] = @aoid
+order by ao.[Authorised officer number]
+
+
+
+
+--select top(3) * from dbo.##temppemst3
+
+--select *
+-- FROM INFORMATION_SCHEMA.COLUMNS
+-- where TABLE_NAME = 'dbo.##temppemst3'
+
+-- SELECT TABLE_CATALOG, TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
+----into ##pemsv2schema
+--FROM INFORMATION_SCHEMA.COLUMNS
+
+
+
+--WHERE TABLE_CATALOG = 'T2_EXPORTS'
